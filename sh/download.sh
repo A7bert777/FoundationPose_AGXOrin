@@ -22,6 +22,10 @@ mkdir -p "$ROOT/weights" "$ROOT/demo_data" "$ROOT/logs"
 SCORER_STAMP="2024-01-11-20-02-45"
 REFINER_STAMP="2023-10-28-18-33-37"
 
+# run_logged：让 gdown 的进度条实时显示在终端（同时落盘），而不是憋到下载结束才输出
+# shellcheck source=sh/_common.sh
+. "$ROOT/sh/_common.sh"
+
 # Google Drive 文件夹 ID（来自官方 readme「Data prepare」）
 GDRIVE_WEIGHTS_ID="1DFezOAD0oD1BblsXVxqDsl8fj0qzB82i"
 GDRIVE_DEMO_ID="1pRyFmxYXmAnpku7nGRioZaKrVJtIsroP"
@@ -80,8 +84,9 @@ download_weights() {
 
   echo "[提示] $label 权重未就绪，尝试用 gdown 拉取 Google Drive 文件夹 ..."
   if "$PY" -c "import gdown" >/dev/null 2>&1; then
-    "$PY" -m gdown --folder "https://drive.google.com/drive/folders/$GDRIVE_WEIGHTS_ID" \
-        -O "$ROOT/weights" 2>&1 | tail -5 || true
+    run_logged "$ROOT/logs/gdown_weights.log" \
+      "$PY" -m gdown --folder "https://drive.google.com/drive/folders/$GDRIVE_WEIGHTS_ID" \
+        -O "$ROOT/weights" || true
   else
     echo "[警告] 未安装 gdown，无法自动下载权重。"
     echo "       请任选其一："
@@ -102,10 +107,11 @@ DEMO_MESH="$DEMO_DIR/mesh/textured_simple.obj"
 if [[ -f "$DEMO_MESH" ]]; then
   echo "[跳过] 示例数据已存在：$DEMO_DIR"
 else
-  echo "[提示] 示例数据未就绪，尝试用 gdown 拉取 ..."
+  echo "[提示] 示例数据未就绪，尝试用 gdown 拉取（约 2.6G，耗时较长）..."
   if "$PY" -c "import gdown" >/dev/null 2>&1; then
-    "$PY" -m gdown --folder "https://drive.google.com/drive/folders/$GDRIVE_DEMO_ID" \
-        -O "$ROOT/demo_data" 2>&1 | tail -5 || true
+    run_logged "$ROOT/logs/gdown_demo.log" \
+      "$PY" -m gdown --folder "https://drive.google.com/drive/folders/$GDRIVE_DEMO_ID" \
+        -O "$ROOT/demo_data" || true
   else
     echo "[警告] 未安装 gdown，跳过示例数据下载。"
   fi

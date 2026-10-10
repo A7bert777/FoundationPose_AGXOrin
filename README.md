@@ -257,6 +257,7 @@ FoundationPose_AGXOrin/
 │   ├── build_ext.sh              # 编译原生扩展（pytorch3d/nvdiffrast/mycpp）
 │   ├── build_engine_fp.sh        # ONNX -> TensorRT engine（FP32）
 │   ├── download.sh               # 下载权重与示例数据（断点续传）
+│   ├── _common.sh                # 公共函数：run_logged（输出实时可见 + 落盘）
 │   └── check_env.sh              # CUDA/编译器/扩展/包 环境检查
 │
 ├── py/                           # Python 实现
@@ -371,6 +372,12 @@ pose = est.track_one(rgb=color, depth=depth, K=K, iteration=2)               # �
    `A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x`
    并出现 `Failed to initialize NumPy`，`tensor.numpy()` 等互操作随之失效。
    `requirements.txt` 已写死 `numpy<2`（本机实测 1.26.4）。
+8. **长任务不要 `>> log 2>&1`**：pip / gdown 只在 stdout 是 tty 时才显示实时
+   进度条，直接重定向到日志会让终端长时间一片空白（216MB 的 torch wheel、
+   2.6G 的示例数据、30-60 分钟的 pytorch3d 编译都属此类）。
+   `sh/_common.sh` 提供 `run_logged`，用 `script(pty)` 包一层，做到
+   **终端实时可见 + 日志照样落盘**；`setup.sh` / `build_ext.sh` / `download.sh`
+   的所有长任务都走它。
 
 ---
 

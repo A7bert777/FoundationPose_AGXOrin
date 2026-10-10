@@ -31,6 +31,10 @@ mkdir -p "$LOG" "$ROOT/models" "$ROOT/assets" "$ROOT/inputimage" \
          "$ROOT/outputimage" "$ROOT/outputs" "$ROOT/weights" "$ROOT/demo_data" \
          "$ROOT/wheels"
 
+# run_logged：长任务输出同时打到终端和日志（内部用 pty，保证 pip/gdown 的进度条实时可见）
+# shellcheck source=sh/_common.sh
+. "$ROOT/sh/_common.sh"
+
 echo "=============================================="
 echo " FoundationPose_AGXOrin 环境初始化"
 echo " 项目根目录: $ROOT"
@@ -61,7 +65,7 @@ else
       curl -sSL https://bootstrap.pypa.io/get-pip.py -o "$GETPIP" || {
         echo "[错误] 下载 get-pip.py 失败，请检查网络。"; exit 1; }
     fi
-    "$PY" "$GETPIP" > "$LOG/getpip.log" 2>&1 || { tail -10 "$LOG/getpip.log"; exit 1; }
+    run_logged "$LOG/getpip.log" "$PY" "$GETPIP" || { tail -10 "$LOG/getpip.log"; exit 1; }
     echo "      已创建：$VENV（--without-pip + get-pip.py 引导）"
   fi
   echo "      注意：这是本项目专属 venv，未复用任何其它项目环境"
@@ -89,13 +93,13 @@ install_one() {   # $1=import 名  $2=包名  $3=版本  $4=本地 wheel 通配
   for w in "$ROOT/wheels/"$4; do
     if [ -f "$w" ]; then
       echo "      从本地 wheel 安装 $2：$(basename "$w")"
-      "$PY" -m pip install "${PIP_OPTS[@]}" "$w" >> "$LOG/pip.log" 2>&1 && return 0
+      run_logged "$LOG/pip.log" "$PY" -m pip install "${PIP_OPTS[@]}" "$w" && return 0
       break
     fi
   done
   echo "      从镜像安装 $2==$3 ..."
-  "$PY" -m pip install "${PIP_OPTS[@]}" --index-url "$TORCH_INDEX" "$2==$3" \
-    >> "$LOG/pip.log" 2>&1 && return 0
+  run_logged "$LOG/pip.log" "$PY" -m pip install "${PIP_OPTS[@]}" \
+    --index-url "$TORCH_INDEX" "$2==$3" && return 0
   return 1
 }
 
@@ -103,7 +107,8 @@ if "$PY" -c "import torch, torchvision" >/dev/null 2>&1; then
   echo "[2/7] torch 已就绪: $("$PY" -c 'import torch; print(torch.__version__)')"
 else
   echo "[2/7] 安装 NVIDIA 定制 PyTorch（Jetson aarch64, JetPack 6.x）..."
-  "$PY" -m pip install --upgrade pip wheel > "$LOG/pip.log" 2>&1 || true
+  echo "      torch wheel 约 216MB，视网速可能需数分钟；下方会实时显示进度条"
+  run_logged "$LOG/pip.log" "$PY" -m pip install --upgrade pip wheel || true
 
   ok=1
   install_one torch       torch       2.8.0  "torch-2.8.0-*.whl"       || ok=0
@@ -120,11 +125,11 @@ else
 fi
 
 # ---------- 3. Python 依赖 ----------
-echo "[3/7] 安装 FoundationPose Python 依赖（日志：logs/deps.log）..."
-"$PY" -m pip install --no-cache-dir -r "$ROOT/requirements.txt" \
-  > "$LOG/deps.log" 2>&1 || { tail -30 "$LOG/deps.log"; exit 1; }
+echo "[3/7] 安装 FoundationPose Python 依赖（含 open3d / warp-lang，体积较大，日志：logs/deps.log）..."
+run_logged "$LOG/deps.log" "$PY" -m pip install --no-cache-dir -r "$ROOT/requirements.txt" \
+  || { tail -30 "$LOG/deps.log"; exit 1; }
 # 额外：gdown（权重下载）、hf 镜像等
-"$PY" -m pip install --no-cache-dir gdown >> "$LOG/deps.log" 2>&1 || true
+run_logged "$LOG/deps.log" "$PY" -m pip install --no-cache-dir gdown || true
 echo "      依赖安装完成"
 
 # ---------- 4. 官方源码 ----------
@@ -132,8 +137,8 @@ echo "      依赖安装完成"
 # 在此自动获取。必须在第 5 步编译原生扩展之前就位（build_ext.sh 依赖它的 mycpp/）。
 if [ ! -f "$ROOT/framework_src/estimater.py" ]; then
   echo "[4/7] 获取官方 FoundationPose 源码（framework_src）..."
-  git clone https://github.com/NVlabs/FoundationPose.git "$ROOT/framework_src" \
-    > "$LOG/clone_framework_src.log" 2>&1 || {
+  run_logged "$LOG/clone_framework_src.log" \
+    git clone https://github.com/NVlabs/FoundationPose.git "$ROOT/framework_src" || {
       echo "[错误] clone 失败，请检查网络。也可手动执行："
       echo "        git clone https://github.com/NVlabs/FoundationPose.git $ROOT/framework_src"
       exit 1; }

@@ -22,6 +22,11 @@ SRC="$ROOT/framework_src"
 LOG="$ROOT/logs"
 mkdir -p "$LOG"
 
+# run_logged：编译输出实时打到终端（同时落盘）。这三个扩展编译很慢
+# （pytorch3d 在 AGX Orin 上通常 30-60 分钟），不能让你盯着空白屏幕等。
+# shellcheck source=sh/_common.sh
+. "$ROOT/sh/_common.sh"
+
 if [[ ! -x "$PY" ]]; then
   echo "[错误] 未找到 venv：$VENV，请先执行 ./sh/setup.sh"
   exit 1
@@ -48,10 +53,12 @@ want() { [[ "$TARGETS" == "all" || "$TARGETS" == "$1" ]]; }
 build_pytorch3d() {
   echo "======================================================================"
   echo " [1/3] 编译 pytorch3d ..."
+  echo "      这一步最慢（AGX Orin 上通常 30-60 分钟），编译输出实时可见，"
+  echo "      同时写入 $LOG/build_pytorch3d.log"
   echo "======================================================================"
-  "$PY" -m pip install --no-build-isolation \
-    "git+https://github.com/facebookresearch/pytorch3d.git" \
-    > "$LOG/build_pytorch3d.log" 2>&1 || {
+  run_logged "$LOG/build_pytorch3d.log" \
+    "$PY" -m pip install --no-build-isolation \
+      "git+https://github.com/facebookresearch/pytorch3d.git" || {
       echo "[失败] pytorch3d 编译失败，末尾日志："
       tail -30 "$LOG/build_pytorch3d.log"
       return 1
@@ -64,11 +71,11 @@ build_pytorch3d() {
 # ------------------------------------------------------------------ #
 build_nvdiffrast() {
   echo "======================================================================"
-  echo " [2/3] 编译 nvdiffrast ..."
+  echo " [2/3] 编译 nvdiffrast ...（输出实时可见，同时写入 $LOG/build_nvdiffrast.log）"
   echo "======================================================================"
-  "$PY" -m pip install --no-build-isolation \
-    "git+https://github.com/NVlabs/nvdiffrast.git" \
-    > "$LOG/build_nvdiffrast.log" 2>&1 || {
+  run_logged "$LOG/build_nvdiffrast.log" \
+    "$PY" -m pip install --no-build-isolation \
+      "git+https://github.com/NVlabs/nvdiffrast.git" || {
       echo "[失败] nvdiffrast 编译失败，末尾日志："
       tail -30 "$LOG/build_nvdiffrast.log"
       return 1
@@ -88,14 +95,14 @@ build_mycpp() {
   mkdir -p "$B"
   (
     cd "$B"
-    cmake .. \
+    run_logged "$LOG/build_mycpp_cmake.log" cmake .. \
       -DCMAKE_BUILD_TYPE=Release \
       -DPYTHON_EXECUTABLE="$PY" \
       -DPython3_ROOT_DIR="$VENV" \
       -DPYBIND11_PYTHON_EXECUTABLE="$PY" \
-      > "$LOG/build_mycpp_cmake.log" 2>&1 || { tail -30 "$LOG/build_mycpp_cmake.log"; exit 1; }
-    make -j"${MAX_JOBS}" \
-      > "$LOG/build_mycpp_make.log" 2>&1 || { tail -30 "$LOG/build_mycpp_make.log"; exit 1; }
+      || { tail -30 "$LOG/build_mycpp_cmake.log"; exit 1; }
+    run_logged "$LOG/build_mycpp_make.log" make -j"${MAX_JOBS}" \
+      || { tail -30 "$LOG/build_mycpp_make.log"; exit 1; }
   ) || { echo "[失败] mycpp 编译失败，见 logs/build_mycpp_*.log"; return 1; }
 
   local so
