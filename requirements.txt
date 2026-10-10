@@ -1,0 +1,57 @@
+# FoundationPose_AGXOrin 依赖清单（Jetson AGX Orin / aarch64 / Python 3.10）
+#
+# 说明：
+#   * 本项目是 NVIDIA FoundationPose（CVPR 2024）在 Jetson AGX Orin 上的
+#     工程化部署，目录与脚本风格对齐同机上的 SAM3_AGXOrin。
+#   * torch / torchvision 必须使用 NVIDIA 为 Jetson 提供的定制 wheel
+#     （PyPI 上没有 aarch64+CUDA 的 wheel），由 setup.sh 自动安装。
+#   * pytorch3d / nvdiffrast 需要 nvcc 从源码编译，由 setup.sh 调用
+#     build_ext.sh 处理，不写在本文件里（避免 pip 误拉 PyPI 版本）。
+#
+# 本机基线（AGX Orin 64GB / JetPack R36.4.7 / CUDA 12.6）：
+#   torch        2.8.0（NVIDIA 定制 aarch64 wheel）
+#   torchvision  0.23.0
+#   TensorRT     10.3（可选，用于 TRT 加速路径）
+
+# ---- 核心数值 / IO ----
+numpy
+scipy
+scikit-learn
+h5py
+joblib
+
+# ---- 配置 / 序列化 ----
+PyYAML>=6
+ruamel.yaml>=0.18
+
+# ---- 视觉 & 3D ----
+opencv-python
+imageio
+open3d
+trimesh
+transformations
+matplotlib
+pandas
+Pillow
+pyrender
+pyOpenGL>=3.1
+pyOpenGL_accelerate>=3.1
+
+# ---- 推理栈（torch 由 setup.sh 单独安装）----
+kornia>=0.7
+omegaconf>=2.3
+psutil
+tqdm
+warp-lang
+
+# ---- 可选：更快的图像处理 / 工具（代码里有 import guard）----
+scikit-image
+
+# ---- 构建 mycpp 原生扩展所需（也可用 apt 提供系统级 eigen/boost）----
+pybind11
+ninja
+cmake
+
+# ---- 注意：以下两个必须从源码编译，见 sh/build_ext.sh ----
+# pytorch3d    https://github.com/facebookresearch/pytorch3d.git
+# nvdiffrast   https://github.com/NVlabs/nvdiffrast.git

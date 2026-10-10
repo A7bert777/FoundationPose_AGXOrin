@@ -1,0 +1,40 @@
+# venv（本项目独立虚拟环境，不入库）
+venv310/
+
+# 权重 / engine / onnx（体积大，需下载或构建）
+weights/
+models/*.pth
+models/*.onnx
+models/*.engine
+models/*.build_seconds
+
+# 安装用 wheel（体积大，且 GitHub 单文件上限 100MB）
+wheels/
+
+# 官方源码（git clone 得到）
+framework_src/
+
+# 示例数据 / 调试 / 输出
+demo_data/
+debug/
+outputs/
+outputimage/*.png
+run/*.sock
+run/*.pid
+run/*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.ipynb_checkpoints/
+
+# 构建中间件
+framework_src/mycpp/build/
+build/
+
+# 系统
+.DS_Store
+*.swp
