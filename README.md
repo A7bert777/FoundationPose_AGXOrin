@@ -355,6 +355,22 @@ pose = est.track_one(rgb=color, depth=depth, K=K, iteration=2)               # �
    `libboost-all-dev`，缺失时 `build_ext.sh mycpp` 会失败。
 4. **内存**：编译原生扩展时 `MAX_JOBS` 不宜过大（AGX Orin 上建议 4），
    否则并行编译可能耗尽统一内存。
+5. **`python3.10 -m venv` 报 ensurepip 不可用**：JetPack 默认没装
+   `python3.10-venv` 包。`setup.sh` 会探测 `ensurepip`，缺失时自动改用
+   `--without-pip` + `get-pip.py` 引导 pip，无需 sudo，属正常路径，不是错误。
+6. **NVIDIA 的 PyTorch 直链已失效**：旧地址
+   `developer.download.nvidia.com/compute/redist/jp/v61/pytorch/*.whl`
+   现已整体返回 **HTTP 404**（与网络无关）。`setup.sh` 因此改为两级来源：
+   优先用本地 `wheels/` 目录中已下好的 wheel，缺失时从 Jetson 社区镜像
+   `pypi.jetson-ai-lab.io/jp6/cu126` 安装。若镜像也不可达，手动把
+   `torch-2.8.0-cp310-cp310-linux_aarch64.whl` 与
+   `torchvision-0.23.0-cp310-cp310-linux_aarch64.whl` 放进 `wheels/` 再跑
+   `setup.sh` 即可（会自动优先用本地 wheel）。
+7. **`numpy` 必须锁 `<2`**：NVIDIA 的 Jetson torch 2.8.0 wheel 是针对 NumPy 1.x
+   编译的。若解析到 NumPy 2.x，`import torch` 会打印
+   `A module that was compiled using NumPy 1.x cannot be run in NumPy 2.x`
+   并出现 `Failed to initialize NumPy`，`tensor.numpy()` 等互操作随之失效。
+   `requirements.txt` 已写死 `numpy<2`（本机实测 1.26.4）。
 
 ---
 

@@ -14,7 +14,11 @@
 #   TensorRT     10.3（可选，用于 TRT 加速路径）
 
 # ---- 核心数值 / IO ----
-numpy
+# numpy 必须 <2：NVIDIA 的 Jetson torch 2.8.0 wheel 是针对 NumPy 1.x 编译的，
+# 装成 NumPy 2.x 后 import torch 会报 "A module that was compiled using NumPy 1.x
+# cannot be run in NumPy 2.x" 并导致 tensor.numpy() 等互操作失效。
+# 本机已验证可用版本：1.26.4。
+numpy<2
 scipy
 scikit-learn
 h5py

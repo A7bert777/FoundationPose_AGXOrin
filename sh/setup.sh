@@ -19,8 +19,17 @@ PY="$VENV/bin/python"
 SP="$VENV/lib/python3.10/site-packages"
 LOG="$ROOT/logs"
 
+# 清掉外部 PYTHONPATH（例如 source 过 ROS 的 /opt/ros/*/lib/python3.X/site-packages）。
+# 本 venv 是 python3.10，若 PYTHONPATH 里混入别的 Python 版本的 site-packages，
+# pip 会把那些包误判为「已安装」，import 时也可能被意外遮蔽。
+if [ -n "${PYTHONPATH:-}" ]; then
+  echo "[提示] 已忽略外部 PYTHONPATH=$PYTHONPATH（避免污染本项目 venv）"
+  unset PYTHONPATH
+fi
+
 mkdir -p "$LOG" "$ROOT/models" "$ROOT/assets" "$ROOT/inputimage" \
-         "$ROOT/outputimage" "$ROOT/outputs" "$ROOT/weights" "$ROOT/demo_data"
+         "$ROOT/outputimage" "$ROOT/outputs" "$ROOT/weights" "$ROOT/demo_data" \
+         "$ROOT/wheels"
 
 echo "=============================================="
 echo " FoundationPose_AGXOrin 环境初始化"
@@ -36,13 +45,14 @@ else
     echo "[错误] 未找到 python3.10，请先安装（如 sudo apt-get install -y python3.10 python3.10-venv）"
     exit 1
   fi
-  # 说明：部分 JetPack 系统的 python3.10 未自带 ensurepip（缺 python3.10-venv 包）。
-  # 此时 `python3.10 -m venv` 会失败。这里先用标准方式创建；若失败则回退到
-  # `--without-pip` + get-pip.py 引导 pip，全程不需要 sudo。
-  if python3.10 -m venv "$VENV" 2>/dev/null && [ -x "$PY" ]; then
+  # 说明：部分 JetPack 系统的 python3.10 未装 python3.10-venv 包，因而不带 ensurepip，
+  # `python3.10 -m venv` 会失败并打印一大段 ensurepip 报错。这里先探测 ensurepip：
+  # 有就用标准方式，没有就直接走 `--without-pip` + get-pip.py 引导 pip，全程不需要 sudo。
+  if python3.10 -c "import ensurepip" >/dev/null 2>&1 \
+     && python3.10 -m venv "$VENV" 2>/dev/null && [ -x "$PY" ]; then
     echo "      已创建：$VENV（标准方式）"
   else
-    echo "      ensurepip 不可用，回退到 --without-pip + get-pip.py ..."
+    echo "      未装 python3.10-venv（缺 ensurepip），改用 --without-pip + get-pip.py 引导"
     rm -rf "$VENV"
     python3.10 -m venv --without-pip "$VENV" || {
       echo "[错误] 创建 venv 失败，请安装 python3.10-venv 后重试。"; exit 1; }
@@ -60,16 +70,53 @@ fi
 export LD_LIBRARY_PATH="$SP/nvidia/cusparselt/lib:${LD_LIBRARY_PATH:-}"
 
 # ---------- 2. torch ----------
-if "$PY" -c "import torch" >/dev/null 2>&1; then
+# 注意：NVIDIA 已下线旧的直链
+#   https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch/...
+# 现在访问该目录下任何文件都返回 HTTP 404（不是网络问题）。
+# 因此改为两级来源：
+#   a) 本地 wheels/ 目录里已下好的 wheel（离线可用，版本完全可控）——优先
+#   b) Jetson 社区镜像 pypi.jetson-ai-lab.io（PEP 503 索引，含 jp6/cu126 构建）
+TORCH_INDEX="${FP_TORCH_INDEX:-https://pypi.jetson-ai-lab.io/jp6/cu126}"
+PIP_OPTS=(--no-cache-dir --timeout 120 --retries 5)
+
+# 装单个包：本地有 wheel 就用本地的，否则走镜像
+install_one() {   # $1=import 名  $2=包名  $3=版本  $4=本地 wheel 通配
+  if "$PY" -c "import $1" >/dev/null 2>&1; then
+    echo "      $2 已安装，跳过"
+    return 0
+  fi
+  local w
+  for w in "$ROOT/wheels/"$4; do
+    if [ -f "$w" ]; then
+      echo "      从本地 wheel 安装 $2：$(basename "$w")"
+      "$PY" -m pip install "${PIP_OPTS[@]}" "$w" >> "$LOG/pip.log" 2>&1 && return 0
+      break
+    fi
+  done
+  echo "      从镜像安装 $2==$3 ..."
+  "$PY" -m pip install "${PIP_OPTS[@]}" --index-url "$TORCH_INDEX" "$2==$3" \
+    >> "$LOG/pip.log" 2>&1 && return 0
+  return 1
+}
+
+if "$PY" -c "import torch, torchvision" >/dev/null 2>&1; then
   echo "[2/7] torch 已就绪: $("$PY" -c 'import torch; print(torch.__version__)')"
 else
   echo "[2/7] 安装 NVIDIA 定制 PyTorch（Jetson aarch64, JetPack 6.x）..."
   "$PY" -m pip install --upgrade pip wheel > "$LOG/pip.log" 2>&1 || true
-  "$PY" -m pip install --no-cache-dir \
-    "https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch/torch-2.8.0-cp310-cp310-linux_aarch64.whl" \
-    "https://developer.download.nvidia.com/compute/redist/jp/v61/pytorch/torchvision-0.23.0-cp310-cp310-linux_aarch64.whl" \
-    >> "$LOG/pip.log" 2>&1 \
-    || { echo "[提示] 自动安装失败，请参考 NVIDIA Jetson PyTorch 论坛贴手动安装 torch/torchvision。"; exit 1; }
+
+  ok=1
+  install_one torch       torch       2.8.0  "torch-2.8.0-*.whl"       || ok=0
+  install_one torchvision torchvision 0.23.0 "torchvision-0.23.0-*.whl" || ok=0
+
+  if [ "$ok" = 0 ]; then
+    echo "[错误] torch / torchvision 安装失败，详见 $LOG/pip.log"
+    echo "       手动方案：下载对应 wheel 放进 $ROOT/wheels/ 后重跑本脚本即可（会自动优先使用本地 wheel）："
+    echo "         torch-2.8.0-cp310-cp310-linux_aarch64.whl"
+    echo "         torchvision-0.23.0-cp310-cp310-linux_aarch64.whl"
+    echo "       镜像索引：$TORCH_INDEX"
+    exit 1
+  fi
 fi
 
 # ---------- 3. Python 依赖 ----------
