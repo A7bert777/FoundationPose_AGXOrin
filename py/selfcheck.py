@@ -60,6 +60,26 @@ try:
 except Exception as e:  # noqa: BLE001
     check("CUDA 可用", False, repr(e))
 
+# 2b. warp 自己的 CUDA 设备表
+# warp-lang 内嵌一份 CUDA Toolkit，若其版本高于本机驱动可支持的上限，
+# warp **不会报错**，而是静默退化为纯 CPU 模式（cuda_devices 为空）。
+# 之后 framework_src/Utils.py 的 erode_depth() 调 wp.from_torch(..., 'cuda')
+# 会抛一个离病根很远的 IndexError: list index out of range，极难排查。
+# 这里提前把真正的原因点出来。
+try:
+    import warp as wp
+    wp.init()
+    n_cuda = len(wp.get_cuda_devices())
+    if n_cuda > 0:
+        check("warp 识别到 CUDA 设备", True, f"warp={wp.config.version}")
+    else:
+        check("warp 识别到 CUDA 设备", False,
+              f"warp={wp.config.version} 未注册任何 CUDA 设备（已退化为纯 CPU 模式）。"
+              "原因通常是 warp-lang 版本过新、其内嵌 CUDA Toolkit 高于本机驱动。"
+              "修复：pip install 'warp-lang==1.16.0'")
+except Exception as e:  # noqa: BLE001
+    check("warp 识别到 CUDA 设备", False, repr(e))
+
 # 3. mycpp
 build_dir = SRC / "mycpp" / "build"
 so_files = list(build_dir.glob("mycpp*.so"))

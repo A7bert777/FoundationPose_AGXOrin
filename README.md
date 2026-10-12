@@ -378,6 +378,20 @@ pose = est.track_one(rgb=color, depth=depth, K=K, iteration=2)               # �
    `sh/_common.sh` 提供 `run_logged`，用 `script(pty)` 包一层，做到
    **终端实时可见 + 日志照样落盘**；`setup.sh` / `build_ext.sh` / `download.sh`
    的所有长任务都走它。
+9. **`warp-lang` 必须锁 `==1.16.0`**：warp 内嵌一份自己的 CUDA Toolkit，其
+   版本决定了所需驱动的下限：
+
+   | warp-lang | 内嵌 CUDA Toolkit | 本机（驱动 12.6） |
+   |---|---|---|
+   | 1.16.0 | 12.9 | ✅ 正常识别 `cuda:0 Orin` |
+   | 1.18.0 | 13.4 | ❌ 要求驱动 ≥ 13.0 |
+
+   危险之处在于 **warp 不会报错，而是静默退化为纯 CPU 模式**（
+   `wp.get_cuda_devices()` 返回空列表），随后 `framework_src/Utils.py` 的
+   `erode_depth()` 调 `wp.from_torch(..., device='cuda')` 时抛
+   `IndexError: list index out of range`——报错点离病根极远。
+   `py/selfcheck.py` 已加一项「warp 识别到 CUDA 设备」检查，`setup.sh`
+   第 7 步会自动跑到，装错版本能当场发现。
 
 ---
 

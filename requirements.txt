@@ -46,7 +46,13 @@ kornia>=0.7
 omegaconf>=2.3
 psutil
 tqdm
-warp-lang
+# warp-lang 必须锁 1.16.0：它内嵌的 CUDA Toolkit 版本决定了所需驱动下限。
+#   1.16.0 -> CUDA Toolkit 12.9，在 JetPack 6（驱动 12.6）上正常识别 cuda:0
+#   1.18.0 -> CUDA Toolkit 13.4，要求驱动 >= 13.0，本机不满足
+# 后果不是报错退出，而是 warp **静默退化为纯 CPU 模式**（不注册任何 cuda
+# 设备），随后 framework_src/Utils.py 的 erode_depth() 调 wp.from_torch(...,
+# device='cuda') 时抛 IndexError: list index out of range —— 报错点离病根很远。
+warp-lang==1.16.0
 
 # ---- 可选：更快的图像处理 / 工具（代码里有 import guard）----
 scikit-image
